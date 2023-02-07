@@ -1,10 +1,11 @@
-#include <asm-generic/errno-base.h>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <memory>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <thread>
@@ -13,7 +14,21 @@
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
-unsigned int io_depth = 1024;
+unsigned int io_depth = 32768;
+
+class FD {
+public:
+  explicit FD(int fd) : fd_(fd) {}
+
+  ~FD() {
+    if (-1 == close(fd_)) {
+      std::cerr << "Failed to close FD: " << fd_ << std::endl;
+    }
+  }
+
+private:
+  int fd_;
+};
 
 int do_write(io_uring *ring) {
   const char *file_path = "/data/data0";
@@ -25,11 +40,12 @@ int do_write(io_uring *ring) {
     std::cerr << "Failed to open " << file_path << std::endl;
     return -1;
   }
+  FD fd_(fd);
   std::cout << "Open " << file_path << " OK" << std::endl;
 
   const size_t buf_size = 1024 * 16;
-  void *buf = malloc(buf_size);
-  memset(buf, 1, sizeof(buf));
+  std::array<char, buf_size> buf;
+  memset(buf.data(), 1, buf_size);
 
   uint64_t pos = 0;
 
@@ -48,12 +64,19 @@ int do_write(io_uring *ring) {
         break;
       }
 
-      io_uring_prep_write(sqe, fd, buf, buf_size, pos);
-
+      io_uring_prep_write(sqe, fd, buf.data(), buf_size, pos);
       io_uring_sqe_set_data(sqe, (void *)(seq++));
+
       pos += buf_size;
       writes++;
       need_submit = true;
+
+      // fdatasync
+      if (0 == (seq % 1024) && writes < io_depth) {
+        io_uring_sqe *sqe = io_uring_get_sqe(ring);
+        io_uring_prep_fsync(sqe, fd, IORING_FSYNC_DATASYNC);
+        writes++;
+      }
     }
 
     if (need_submit) {
@@ -101,11 +124,6 @@ int do_write(io_uring *ring) {
       std::cout << "All writes are completed. Pos: " << pos << std::endl;
       break;
     }
-  }
-
-  int ret = close(fd);
-  if (-1 == ret) {
-    std::cerr << "Failed to close FD: " << fd << std::endl;
   }
 
   return 0;
