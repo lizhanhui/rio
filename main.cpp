@@ -32,7 +32,7 @@ private:
 
 int do_write(io_uring *ring) {
   const char *file_path = "/data/data0";
-  int flags = O_CREAT | O_APPEND | O_RDWR | O_NOATIME;
+  int flags = O_CREAT | O_RDWR | O_NOATIME;
   int mode = S_IRWXU | S_IRWXG;
   int fd = open(file_path, flags, mode);
 
@@ -43,15 +43,19 @@ int do_write(io_uring *ring) {
   FD fd_(fd);
   std::cout << "Open " << file_path << " OK" << std::endl;
 
-  const size_t buf_size = 1024 * 16;
+  const size_t buf_size = 1024 * 4;
   std::array<char, buf_size> buf;
   memset(buf.data(), 1, buf_size);
 
   uint64_t pos = 0;
 
-  uint64_t file_size_10_GiB = ((uint64_t)10) * 1024 * 1024 * 1024;
+  uint64_t file_size_10_GiB = ((uint64_t)100) * 1024 * 1024 * 1024;
   io_uring_cqe *cqe;
   uint64_t seq = 0;
+
+  uint64_t bytes_written = 0;
+  uint64_t iops = 0;
+  auto current = std::chrono::steady_clock::now();
 
   int writes = 0;
   while (true) {
@@ -113,6 +117,19 @@ int do_write(io_uring *ring) {
       if (cqe->res < 0) {
         // TODO: error handling
         std::cerr << "Something is wrong with CQE" << std::endl;
+      } else {
+        bytes_written += cqe->res;
+        iops += 1;
+
+        if (std::chrono::steady_clock::now() - current >
+            std::chrono::seconds(1)) {
+          std::cout << "IOPS: " << iops
+                    << ", Throughput: " << bytes_written / 1024 / 1024 << "MiB/s"
+                    << std::endl;
+          bytes_written = 0;
+          iops = 0;
+          current = std::chrono::steady_clock::now();
+        }
       }
 
       writes--;
