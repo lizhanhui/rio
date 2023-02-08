@@ -16,7 +16,11 @@
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
-unsigned int io_depth = 4096;
+#include <gflags/gflags.h>
+
+DEFINE_int32(io_depth, 4096, "IO depth");
+DEFINE_int32(buf_size, 1024 * 16, "Buffer size in bytes");
+DEFINE_string(file_path, "/data/data0", "Absolute file path");
 
 class FD {
 public:
@@ -41,7 +45,7 @@ bool need_sync_data(int flags, uint64_t seq, int writes) {
     return false;
   }
 
-  if (writes >= io_depth) {
+  if (writes >= FLAGS_io_depth) {
     return false;
   }
 
@@ -49,17 +53,16 @@ bool need_sync_data(int flags, uint64_t seq, int writes) {
 }
 
 int do_write(io_uring *ring) {
-  const char *file_path = "/data/data0";
   int flags = O_CREAT | O_RDWR | O_NOATIME | O_DIRECT | O_NONBLOCK;
   int mode = S_IRWXU | S_IRWXG;
-  int fd = open(file_path, flags, mode);
+  int fd = open(FLAGS_file_path.c_str(), flags, mode);
 
   if (-1 == fd) {
-    std::cerr << "Failed to open " << file_path << std::endl;
+    std::cerr << "Failed to open " << FLAGS_file_path << std::endl;
     return -1;
   }
   FD fd_(fd);
-  std::cout << "Open " << file_path << " OK" << std::endl;
+  std::cout << "Open " << FLAGS_file_path << " OK" << std::endl;
 
   int fds[1];
   fds[0] = fd;
@@ -75,22 +78,22 @@ int do_write(io_uring *ring) {
   // int buf_size = 4096;
 
   // 16KiB
-  int buf_size = 16384;
+  // int buf_size = 16384;
 
   // 64KiB
   // int buf_size = 65536;
 
   // 128KiB
   // int buf_size = 1 << 17;
-  std::cout << "IO Block Size: " << buf_size / 1024 << "KiB" << std::endl;
+  std::cout << "IO Block Size: " << FLAGS_buf_size / 1024 << "KiB" << std::endl;
 
   int alignment = 4096;
-  void *buf = aligned_alloc(alignment, buf_size);
-  memset(buf, 1, buf_size);
+  void *buf = aligned_alloc(alignment, FLAGS_buf_size);
+  memset(buf, 1, FLAGS_buf_size);
 
   iovec iov[1];
   iov[0].iov_base = buf;
-  iov[0].iov_len = buf_size;
+  iov[0].iov_len = FLAGS_buf_size;
 
   ret = io_uring_register_buffers(ring, iov, 1);
   if (ret) {
@@ -125,7 +128,7 @@ int do_write(io_uring *ring) {
     bool need_submit = false;
     auto start = std::chrono::steady_clock::now();
     int before = writes;
-    while (pos < file_size_10_GiB && writes < io_depth) {
+    while (pos < file_size_10_GiB && writes < FLAGS_io_depth) {
       io_uring_sqe *sqe = io_uring_get_sqe(ring);
       if (nullptr == sqe) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -133,11 +136,12 @@ int do_write(io_uring *ring) {
         break;
       }
 
-      io_uring_prep_write_fixed(sqe, 0, iov[0].iov_base, buf_size, pos, 0);
+      io_uring_prep_write_fixed(sqe, 0, iov[0].iov_base, FLAGS_buf_size, pos,
+                                0);
       sqe->flags |= IOSQE_FIXED_FILE;
       sqe->user_data = seq++;
 
-      pos += buf_size;
+      pos += FLAGS_buf_size;
       writes++;
       need_submit = true;
 
@@ -314,7 +318,7 @@ int main(int argc, char *argv[]) {
 
   params.flags = flags;
 
-  int ret = io_uring_queue_init_params(io_depth, &uring, &params);
+  int ret = io_uring_queue_init_params(FLAGS_io_depth, &uring, &params);
   if (ret) {
     std::cerr << "Failed to set up io_uring" << strerror(-ret) << std::endl;
   }
