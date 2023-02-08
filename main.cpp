@@ -306,6 +306,8 @@ void report_features(io_uring *ring) {
 
 int main(int argc, char *argv[]) {
 
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
   io_uring uring;
   io_uring_params params = {};
   params.sq_thread_idle = 2000;
