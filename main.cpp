@@ -288,19 +288,19 @@ static const char *op_strs[] = {
 };
 
 void report_features(io_uring *ring) {
-  io_uring_probe *features = io_uring_get_probe_ring(ring);
-  if (nullptr == features) {
+  io_uring_probe *probe = io_uring_get_probe_ring(ring);
+  if (nullptr == probe) {
     std::cerr << "Failed to probe supported io_uring features" << std::endl;
   } else {
     printf("Report of your kernel's list of supported io_uring operations:\n");
     for (char i = 0; i < IORING_OP_LAST; i++) {
       printf("%s: ", op_strs[i]);
-      if (io_uring_opcode_supported(features, i))
+      if (io_uring_opcode_supported(probe, i))
         printf("yes.\n");
       else
         printf("no.\n");
     }
-    free(features);
+    io_uring_free_probe(probe);
   }
 }
 
