@@ -16,7 +16,7 @@
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
-unsigned int io_depth = 1024;
+unsigned int io_depth = 4096;
 
 class FD {
 public:
@@ -75,10 +75,14 @@ int do_write(io_uring *ring) {
   // int buf_size = 4096;
 
   // 16KiB
-  // int buf_size = 16384;
+  int buf_size = 16384;
 
   // 64KiB
-  int buf_size = 65536;
+  // int buf_size = 65536;
+
+  // 128KiB
+  // int buf_size = 1 << 17;
+  std::cout << "IO Block Size: " << buf_size / 1024 << "KiB" << std::endl;
 
   int alignment = 4096;
   void *buf = aligned_alloc(alignment, buf_size);
@@ -96,7 +100,7 @@ int do_write(io_uring *ring) {
 
   uint64_t pos = 0;
 
-  uint64_t file_size_10_GiB = ((uint64_t)10) * 1024 * 1024 * 1024;
+  uint64_t file_size_10_GiB = ((uint64_t)100) * 1024 * 1024 * 1024;
 
   auto start = std::chrono::steady_clock::now();
   ret = fallocate(fd, 0, 0, file_size_10_GiB);
@@ -120,6 +124,7 @@ int do_write(io_uring *ring) {
   while (true) {
     bool need_submit = false;
     auto start = std::chrono::steady_clock::now();
+    int before = writes;
     while (pos < file_size_10_GiB && writes < io_depth) {
       io_uring_sqe *sqe = io_uring_get_sqe(ring);
       if (nullptr == sqe) {
@@ -150,8 +155,8 @@ int do_write(io_uring *ring) {
     auto micro_secs =
         std::chrono::duration_cast<std::chrono::microseconds>(delta).count();
     if (micro_secs >= 10) {
-      std::cout << "Filling IO Depth[" << writes << "] costs " << micro_secs
-                << "us." << std::endl;
+      std::cout << "Filling IO Depth up to [" << writes << "] costs "
+                << micro_secs << "us, adding " << writes - before << std::endl;
     }
 
     if (need_submit) {
@@ -212,7 +217,7 @@ int do_write(io_uring *ring) {
     }
 
     int reap_cnt = prev - writes;
-    if (reap_cnt >= 10) {
+    if (reap_cnt >= 100) {
       std::cout << "Reaped " << reap_cnt << "/" << prev << " IO" << std::endl;
     }
 
