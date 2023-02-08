@@ -21,6 +21,7 @@
 DEFINE_int32(io_depth, 4096, "IO depth");
 DEFINE_int32(buf_size, 1024 * 16, "Buffer size in bytes");
 DEFINE_string(file_path, "/data/data0", "Absolute file path");
+DEFINE_int32(sq_cpu, 1, "IOUring SQ Thread CPU");
 
 class FD {
 public:
@@ -311,7 +312,7 @@ int main(int argc, char *argv[]) {
   io_uring uring;
   io_uring_params params = {};
   params.sq_thread_idle = 2000;
-  params.sq_thread_cpu = 1;
+  params.sq_thread_cpu = FLAGS_sq_cpu;
 
   unsigned int flags = IORING_SETUP_SQPOLL | IORING_SETUP_IOPOLL;
 
